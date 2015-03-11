@@ -6,11 +6,13 @@ var connect = require('connect');
 var di = require('di');
 var fs = require('fs');
 var http = require('http');
+var querystring = require('querystring');
 
 var prism = require('../../');
 
 var testUtils = require('../test-utils');
 var httpGet = testUtils.httpGet;
+var httpPost = testUtils.httpPost;
 var waitForFile = testUtils.waitForFile;
 
 var MockFilenameGenerator = require('../../lib/services/mock-filename-generator');
@@ -223,6 +225,83 @@ describe('mock & record mode', function() {
 
         done();
       });
+    });
+  });
+
+  it('can record a post response', function(done) {
+    prism.create({
+      name: 'mockRecordPostTest',
+      mode: 'mockrecord',
+      context: '/test',
+      host: 'localhost',
+      hashFullRequest: true,
+      port: 8090
+    });
+
+    var recordRequest = '/test';
+    var proxy = manager.get(recordRequest);
+
+    assert.equal(_.isUndefined(proxy), false);
+
+    var postData = querystring.stringify({
+      'foo': 'bar'
+    });
+
+    var pathToResponse = mockFilenameGenerator.getMockPath(proxy, {
+      url: recordRequest,
+      body: postData
+    });
+
+    if (fs.existsSync(pathToResponse)) {
+      fs.unlinkSync(pathToResponse);
+    }
+
+    httpPost('/test', postData).then(function(res) {
+      console.log('record /test POST');
+      console.log('waiting for ' + pathToResponse);
+      waitForFile(pathToResponse, function(pathToResponse) {
+        var recordedResponse = fs.readFileSync(pathToResponse).toString();
+        var deserializedResponse = JSON.parse(recordedResponse);
+
+        assert.equal(_.isUndefined(deserializedResponse), false);
+        assert.equal(deserializedResponse.requestUrl, '/test');
+
+        done();
+      });
+    });
+  });
+
+  it('can playback a post response', function(done) {
+    prism.create({
+      name: 'mockRecordPostTest',
+      mode: 'mockrecord',
+      mocksPath: './mocksToRead',
+      context: '/test',
+      host: 'localhost',
+      hashFullRequest: true,
+      port: 8090
+    });
+
+    var recordRequest = '/test';
+    var proxy = manager.get(recordRequest);
+
+    assert.equal(_.isUndefined(proxy), false);
+
+    var postData = querystring.stringify({
+      'foo': 'bar'
+    });
+
+    var pathToResponse = mockFilenameGenerator.getMockPath(proxy, {
+      url: recordRequest,
+      body: postData
+    });
+
+    assert.equal(fs.existsSync(pathToResponse), true);
+
+    httpPost('/test', postData).then(function(res) {
+      assert.equal(res.req.path, '/test');
+      assert.equal(res.body, 'a server response with more data');
+      done();
     });
   });
 });
